@@ -52,6 +52,6 @@ const videoSchema = new Schema(
   },
   { timestamps: true }
 );
-videoSchema.plugin(mongooseAggregatePaginate);
+videoSchema.plugin(mongooseAggregatePaginate); // watch video about aggrigation in mongoose on hitesh sir's channelS
 
 export const Video = mongoose.model("Video", videoSchema);
