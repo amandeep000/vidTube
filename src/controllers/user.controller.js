@@ -6,8 +6,10 @@ import {
   uploadOnCloudinary,
 } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import jwt from "jsonwebtoken";
 import { upload } from "../middlewares/multer.middlewares.js";
 
+// generate fresh Access and refresh token
 const generateAccessAndRefresh = async (userId) => {
   try {
     const user = await User.findById(userId);
@@ -30,6 +32,7 @@ const generateAccessAndRefresh = async (userId) => {
   }
 };
 
+// register user
 const registerUser = asyncHandler(async (req, res) => {
   // todo add an additional guard clause to check if req body is empty
   const { fullname, email, username, password } = req.body;
@@ -72,7 +75,7 @@ const registerUser = asyncHandler(async (req, res) => {
   let coverImage;
   try {
     coverImage = await uploadOnCloudinary(coverLocalPath);
-    console.log("Uploaded coverImage", avatar);
+    console.log("Uploaded coverImage", coverImage);
   } catch (error) {
     console.log("Error uploading coverImage!", error);
     throw new ApiError(500, "Failed to upload coverImage");
@@ -118,6 +121,7 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
+// login user
 const loginUser = asyncHandler(async (req, res) => {
   // get data from body
   const { email, username, password } = req.body;
@@ -164,4 +168,65 @@ const loginUser = asyncHandler(async (req, res) => {
     );
 });
 
-export { registerUser, generateAccessAndRefresh, loginUser };
+// logout user
+const logoutUser = asyncHandler(async (req, res) => {
+  await User
+    .findByIdAndUpdate
+    // need to come back after middleware
+    ();
+});
+
+// generate new Access token after they expire
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "Refresh token is required");
+  }
+
+  try {
+    const decodedToken = jwt.verify(
+      incomingRefreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    const user = await User.findById(decodedToken?._id);
+    if (!user) {
+      throw new ApiError(401, "Invalid Refresh token");
+    }
+
+    if (incomingRefreshToken !== user?.refreshToken) {
+      throw new ApiError(
+        401,
+        "Invalid refresh token or refresh token is expired"
+      );
+    }
+
+    const options = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+    };
+    const { accessToken, refreshToken: newRefreshToken } =
+      await generateAccessAndRefresh(user._id);
+
+    return res
+      .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", newRefreshToken, options)
+      .json(
+        new ApiResponse(
+          200,
+          { accessToken, refreshToken: newRefreshToken },
+          "Access Token refreshed successfully"
+        )
+      );
+  } catch (error) {
+    throw new ApiError(
+      500,
+      "Something went wrong while refreshing access token"
+    );
+  }
+});
+
+export { registerUser, loginUser, refreshAccessToken };
